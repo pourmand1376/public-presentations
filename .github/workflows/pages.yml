@@ -1,0 +1,71 @@
+name: Deploy presentations to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build site
+        run: |
+          mkdir -p _site
+          # Copy every presentation folder (any top-level dir with an index.html)
+          items=""
+          for dir in */; do
+            dir="${dir%/}"
+            case "$dir" in _site|.*) continue ;; esac
+            [ -f "$dir/index.html" ] || continue
+            cp -R "$dir" "_site/$dir"
+            title=$(grep -o -m1 '<title>[^<]*</title>' "$dir/index.html" | sed -E 's#</?title>##g')
+            [ -n "$title" ] || title="$dir"
+            items="$items<li><a href=\"$dir/\">$title</a><span>/$dir</span></li>"
+          done
+          cat > _site/index.html <<HTML
+          <!doctype html>
+          <html lang="en">
+          <head>
+          <meta charset="utf-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1">
+          <title>Presentations</title>
+          <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap">
+          <style>
+            :root { --bg:#F3EFE7; --ink:#16181D; --mute:#5A5F69; --line:#DED8CC; --accent:#D9541E; }
+            @media (prefers-color-scheme: dark) { :root { --bg:#16181D; --ink:#F3EFE7; --mute:#A3A8B1; --line:#2C2F36; } }
+            body { margin:0; background:var(--bg); color:var(--ink); font-family:Inter,sans-serif; }
+            main { max-width:720px; margin:0 auto; padding:64px 16px; }
+            h1 { font-size:2.4rem; font-weight:800; letter-spacing:-0.02em; margin:0 0 32px; }
+            ul { list-style:none; padding:0; margin:0; }
+            li { border-top:1px solid var(--line); padding:18px 0; display:flex; justify-content:space-between; gap:16px; align-items:baseline; }
+            a { color:var(--ink); font-weight:600; font-size:1.15rem; text-decoration:none; }
+            a:hover { color:var(--accent); }
+            span { color:var(--mute); font-size:.9rem; }
+          </style>
+          </head>
+          <body><main><h1>Presentations</h1><ul>$items</ul></main></body>
+          </html>
+          HTML
+          touch _site/.nojekyll
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+      - id: deployment
+        uses: actions/deploy-pages@v4
